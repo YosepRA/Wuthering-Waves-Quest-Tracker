@@ -24,6 +24,8 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
 
+    "noImplicitAny": false, // Set to false temporarily for learning purposes.
+
     // Style Options
     "noImplicitReturns": true,
     "noImplicitOverride": true,
@@ -42,5 +44,11 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": ["node_modules", "dist"],
+  // "extends": "ts-node/node16/tsconfig.json",
+  "ts-node": {
+    "transpileOnly": true,
+    "files": true,
+    "esm": true
+  }
 }
