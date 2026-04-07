@@ -1,5 +1,9 @@
+import { setTimeout } from 'node:timers/promises';
+
 import axios from 'axios';
 import fs from 'fs-extra';
+import * as cheerio from 'cheerio';
+import puppeteer from 'puppeteer';
 
 import { promiseResolver } from './utils.js';
 
@@ -8,7 +12,7 @@ type Quest = {
   type: string;
   name: string;
   status: 'Not Finished' | 'In Progress' | 'Finished';
-  completionDate: Date;
+  completionDate: Date | null;
   notes: string;
 };
 
@@ -23,8 +27,9 @@ interface IWutheringWavesQuestTracker {
   cache: Map<string, string>;
   fetchHTML: (url: string) => unknown;
   parseQuestsFromHTML: (html: string, version: string) => Quest[];
-  determineQuestType: (questType: string) => string;
-  scrapeVersion: (version: string, urlPath: string) => number;
+  // getMainQuestPrefix: (elem: cheerio.Cheerio<>) => {}
+  // determineQuestType: (questType: string) => string;
+  scrapeVersion: (version: string, urlPath: string) => Promise<number>;
   exportToJSON: () => void;
   scrapeAllVersions: () => void;
 }
@@ -42,22 +47,22 @@ const CONFIG = {
   wikiBaseUrl: 'https://wutheringwaves.fandom.com',
   versionPagesPaths: {
     '1.0': '/wiki/Version/1.0',
-    '1.1': '/wiki/Version/1.1',
-    '1.2': '/wiki/Version/1.2',
-    '1.3': '/wiki/Version/1.3',
-    '1.4': '/wiki/Version/1.4',
-    '2.0': '/wiki/Version/2.0',
-    '2.1': '/wiki/Version/2.1',
-    '2.2': '/wiki/Version/2.2',
-    '2.3': '/wiki/Version/2.3',
-    '2.4': '/wiki/Version/2.4',
-    '2.5': '/wiki/Version/2.5',
-    '2.6': '/wiki/Version/2.6',
-    '2.7': '/wiki/Version/2.7',
-    '2.8': '/wiki/Version/2.8',
-    '3.0': '/wiki/Version/3.0',
-    '3.1': '/wiki/Version/3.1',
-    '3.2': '/wiki/Version/3.2',
+    // '1.1': '/wiki/Version/1.1',
+    // '1.2': '/wiki/Version/1.2',
+    // '1.3': '/wiki/Version/1.3',
+    // '1.4': '/wiki/Version/1.4',
+    // '2.0': '/wiki/Version/2.0',
+    // '2.1': '/wiki/Version/2.1',
+    // '2.2': '/wiki/Version/2.2',
+    // '2.3': '/wiki/Version/2.3',
+    // '2.4': '/wiki/Version/2.4',
+    // '2.5': '/wiki/Version/2.5',
+    // '2.6': '/wiki/Version/2.6',
+    // '2.7': '/wiki/Version/2.7',
+    // '2.8': '/wiki/Version/2.8',
+    // '3.0': '/wiki/Version/3.0',
+    // '3.1': '/wiki/Version/3.1',
+    // '3.2': '/wiki/Version/3.2',
   },
   outputDir: './output',
   jsonFileName: `WuWa-Quests-${Date.now()}`,
@@ -65,10 +70,10 @@ const CONFIG = {
 
 const questTypeMapping = {
   Main_Quests: 'Main Quest',
-  Tutorial_Quests: 'Tutorial',
-  Companion_Stories: 'Companion',
-  Exploration_Quests: 'Exploration',
-  Side_Quests: 'Side Quests',
+  // Tutorial_Quests: 'Tutorial',
+  // Companion_Stories: 'Companion',
+  // Exploration_Quests: 'Exploration',
+  // Side_Quests: 'Side Quests',
 };
 
 class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
@@ -84,14 +89,14 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
     if (this.cache.has(url)) {
       console.log(`Using cache: ${url}`);
 
-      return this.cache.get(url);
+      return this.cache.get(url) || '';
     }
 
     const result = await promiseResolver(
       axios.get<string>(url, {
         headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          // 'User-Agent':
+          //   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           Accept:
             'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
@@ -111,22 +116,97 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
   }
 
   parseQuestsFromHTML(html: string, version: string): Quest[] {
+    const $ = cheerio.load(html);
     const quests = [];
+
+    for (const [id, questTypeName] of Object.entries(questTypeMapping)) {
+      const ul = $(`span#${id}`).parent().next();
+
+      if (id === 'Main_Quests') {
+        ul.children('li').each(function () {
+          const nestedListItems = $(this).find('li');
+
+          nestedListItems.each(function () {
+            const quest = {
+              version,
+              type: questTypeName,
+              name: $(this).text(),
+              status: 'Not Finished',
+              completionDate: null,
+              notes: '',
+            };
+            console.log(
+              '🚀 ~ WutheringWavesQuestTracker ~ parseQuestsFromHTML ~ quest:',
+              quest,
+            );
+          });
+        });
+      }
+    }
 
     return quests;
   }
 
-  determineQuestType(questType: string) {
-    return 'Side Quest';
-  }
+  // determineQuestType(questType: string) {
+  //   return 'Side Quest';
+  // }
 
-  async scrapeVersion(version: string, urlPath: string): number {
+  async scrapeVersion(version: string, urlPath: string) {
     const url = `${CONFIG.wikiBaseUrl}${urlPath}`;
 
+    console.log(`Launching browser for version: ${version}`);
+
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled',
+      ],
+    });
+
     try {
-      const html = await this.fetchHTML(url);
+      // const html = await this.fetchHTML(url);
+
+      /* ===================================================================== */
+
+      const page = await browser.newPage();
+
+      await page.setViewport({ width: 1366, height: 768 });
+      await page.setUserAgent({
+        userAgent:
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      });
+
+      console.log(`Navigating to URL: ${url}`);
+
+      await page.goto(url, {
+        waitUntil: 'networkidle2',
+        timeout: 60000,
+      });
+
+      await setTimeout(3000);
+
+      const html = await page.content();
+
+      /* ===================================================================== */
+
       const versionQuests = await this.parseQuestsFromHTML(html, version);
-    } catch (error) {}
+
+      console.log(
+        `Found ${versionQuests.length} quests for version ${version}.`,
+      );
+
+      this.quests.concat(versionQuests);
+
+      return versionQuests.length;
+    } catch (error) {
+      console.error(`Scrape version error for version ${version}`);
+
+      throw error;
+    } finally {
+      browser.close();
+    }
   }
 
   exportToJSON() {}
@@ -141,11 +221,15 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
       5. Export output object as JSON and save it to designated output dir.
     */
 
+    console.log('Start all version scrape.');
+
     try {
       for (const [version, urlPath] of Object.entries(
         CONFIG.versionPagesPaths,
       )) {
         const count = await this.scrapeVersion(version, urlPath);
+
+        await this.sleep(Math.floor(Math.random() * 5 + 1) * 1000);
       }
     } catch (error) {
       console.error('Scrape all versions error.', error);
@@ -154,13 +238,15 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
 
   sleep(ms: number) {
     return new Promise((resolve) => {
-      setTimeout(resolve, ms);
+      setTimeout(ms).then(resolve);
     });
   }
 }
 
 async function main() {
-  console.log('Hello World!');
+  const scraper = new WutheringWavesQuestTracker();
+
+  await scraper.scrapeAllVersions();
 }
 
 main().catch(console.log);
