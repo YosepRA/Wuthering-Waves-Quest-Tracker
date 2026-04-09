@@ -4,6 +4,7 @@ import axios from 'axios';
 import fs from 'fs-extra';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
+import type { Element, Text, AnyNode } from 'domhandler';
 
 import { promiseResolver } from './utils.js';
 
@@ -25,9 +26,12 @@ type QuestJSONExport = {
 interface IWutheringWavesQuestTracker {
   quests: Quest[];
   cache: Map<string, string>;
-  fetchHTML: (url: string) => unknown;
+  // fetchHTML: (url: string) => unknown;
   parseQuestsFromHTML: (html: string, version: string) => Quest[];
-  // getMainQuestPrefix: (elem: cheerio.Cheerio<>) => {}
+  getMainQuestPrefix: (
+    $: cheerio.CheerioAPI,
+    elem: cheerio.Cheerio<Element>,
+  ) => string;
   // determineQuestType: (questType: string) => string;
   scrapeVersion: (version: string, urlPath: string) => Promise<number>;
   exportToJSON: () => void;
@@ -51,7 +55,7 @@ const CONFIG = {
     // '1.2': '/wiki/Version/1.2',
     // '1.3': '/wiki/Version/1.3',
     // '1.4': '/wiki/Version/1.4',
-    // '2.0': '/wiki/Version/2.0',
+    '2.0': '/wiki/Version/2.0',
     // '2.1': '/wiki/Version/2.1',
     // '2.2': '/wiki/Version/2.2',
     // '2.3': '/wiki/Version/2.3',
@@ -78,41 +82,67 @@ const questTypeMapping = {
 
 class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
   quests: Quest[];
-  cache: Map<string, string>;
+  // cache: Map<string, string>;
 
   constructor() {
     this.quests = [];
-    this.cache = new Map();
+    // this.cache = new Map();
   }
 
-  async fetchHTML(url: string) {
-    if (this.cache.has(url)) {
-      console.log(`Using cache: ${url}`);
+  // async fetchHTML(url: string) {
+  //   if (this.cache.has(url)) {
+  //     console.log(`Using cache: ${url}`);
 
-      return this.cache.get(url) || '';
-    }
+  //     return this.cache.get(url) || '';
+  //   }
 
-    const result = await promiseResolver(
-      axios.get<string>(url, {
-        headers: {
-          // 'User-Agent':
-          //   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          Accept:
-            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        },
-        timeout: 10000,
-      }),
-    );
+  //   const result = await promiseResolver(
+  //     axios.get<string>(url, {
+  //       headers: {
+  //         // 'User-Agent':
+  //         //   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  //         Accept:
+  //           'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  //       },
+  //       timeout: 10000,
+  //     }),
+  //   );
 
-    if (!result.success) {
-      console.error(`Failed to fetch: ${url}`);
+  //   if (!result.success) {
+  //     console.error(`Failed to fetch: ${url}`);
 
-      throw result.error;
-    }
+  //     throw result.error;
+  //   }
 
-    this.cache.set(url, result.data.data);
+  //   this.cache.set(url, result.data.data);
 
-    return result.data.data;
+  //   return result.data.data;
+  // }
+
+  getMainQuestPrefix(
+    $: cheerio.CheerioAPI,
+    listItem: cheerio.Cheerio<Element>,
+  ) {
+    let prefix = '';
+
+    listItem
+      .contents()
+      .filter(
+        (i, node) =>
+          node.type === 'text' ||
+          (node.type === 'tag' && node.tagName.toLowerCase() === 'a'),
+      )
+      .each((i, node) => {
+        if (node.type === 'text' && node.data !== '\n') {
+          prefix += node.data;
+        } else if (node.type === 'tag' && node.tagName.toLowerCase() === 'a') {
+          prefix += $(node).text();
+        }
+      });
+
+    const cleanPrefix = prefix.replace(/\n/, '').trim();
+
+    return cleanPrefix;
   }
 
   parseQuestsFromHTML(html: string, version: string): Quest[] {
@@ -123,14 +153,17 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
       const ul = $(`span#${id}`).parent().next();
 
       if (id === 'Main_Quests') {
-        ul.children('li').each(function () {
-          const nestedListItems = $(this).find('li');
+        ul.children('li').each((i, elem) => {
+          // Build the quest name prefix.
+          const questPrefix = this.getMainQuestPrefix($, $(elem));
+
+          const nestedListItems = $(elem).find('li');
 
           nestedListItems.each(function () {
             const quest = {
               version,
               type: questTypeName,
-              name: $(this).text(),
+              name: `${questPrefix} - ${$(this).text()}`,
               status: 'Not Finished',
               completionDate: null,
               notes: '',
@@ -146,10 +179,6 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
 
     return quests;
   }
-
-  // determineQuestType(questType: string) {
-  //   return 'Side Quest';
-  // }
 
   async scrapeVersion(version: string, urlPath: string) {
     const url = `${CONFIG.wikiBaseUrl}${urlPath}`;
@@ -229,7 +258,8 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
       )) {
         const count = await this.scrapeVersion(version, urlPath);
 
-        await this.sleep(Math.floor(Math.random() * 5 + 1) * 1000);
+        // Sleep between 3-10 seconds per page request.
+        await this.sleep(Math.floor(Math.random() * 8 + 3) * 1000);
       }
     } catch (error) {
       console.error('Scrape all versions error.', error);
