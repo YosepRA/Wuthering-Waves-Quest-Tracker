@@ -1,10 +1,11 @@
 import { setTimeout } from 'node:timers/promises';
+import path from 'node:path';
 
 import axios from 'axios';
 import fs from 'fs-extra';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer';
-import type { Element, Text, AnyNode } from 'domhandler';
+import type { Element } from 'domhandler';
 
 import { promiseResolver } from './utils.js';
 
@@ -18,14 +19,14 @@ type Quest = {
 };
 
 type QuestJSONExport = {
-  exportDate: string;
   quests: Quest[];
   length: number;
+  createdAt: string;
 };
 
 interface IWutheringWavesQuestTracker {
   quests: Quest[];
-  cache: Map<string, string>;
+  // cache: Map<string, string>;
   // fetchHTML: (url: string) => unknown;
   parseQuestsFromHTML: (html: string, version: string) => Quest[];
   getMainQuestPrefix: (
@@ -34,8 +35,8 @@ interface IWutheringWavesQuestTracker {
   ) => string;
   // determineQuestType: (questType: string) => string;
   scrapeVersion: (version: string, urlPath: string) => Promise<number>;
-  exportToJSON: () => void;
-  scrapeAllVersions: () => void;
+  exportToJSON: () => Promise<string>;
+  scrapeAllVersions: () => Promise<Quest[]>;
 }
 
 /* 
@@ -55,7 +56,7 @@ const CONFIG = {
     // '1.2': '/wiki/Version/1.2',
     // '1.3': '/wiki/Version/1.3',
     // '1.4': '/wiki/Version/1.4',
-    '2.0': '/wiki/Version/2.0',
+    // '2.0': '/wiki/Version/2.0',
     // '2.1': '/wiki/Version/2.1',
     // '2.2': '/wiki/Version/2.2',
     // '2.3': '/wiki/Version/2.3',
@@ -69,7 +70,7 @@ const CONFIG = {
     // '3.2': '/wiki/Version/3.2',
   },
   outputDir: './output',
-  jsonFileName: `WuWa-Quests-${Date.now()}`,
+  jsonFileName: `WuWa-Quests-${Date.now()}.json`,
 };
 
 const questTypeMapping = {
@@ -147,11 +148,14 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
 
   parseQuestsFromHTML(html: string, version: string): Quest[] {
     const $ = cheerio.load(html);
-    const quests = [];
+    const quests: Quest[] = [];
 
     for (const [id, questTypeName] of Object.entries(questTypeMapping)) {
       const ul = $(`span#${id}`).parent().next();
 
+      // Main quests have a two-level structure where the first level list item
+      // is the "chapter" name, and the second level is the "part" name.
+      // For example: {Chapter 1} - {First Resonance}
       if (id === 'Main_Quests') {
         ul.children('li').each((i, elem) => {
           // Build the quest name prefix.
@@ -160,7 +164,7 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
           const nestedListItems = $(elem).find('li');
 
           nestedListItems.each(function () {
-            const quest = {
+            const quest: Quest = {
               version,
               type: questTypeName,
               name: `${questPrefix} - ${$(this).text()}`,
@@ -168,11 +172,23 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
               completionDate: null,
               notes: '',
             };
-            console.log(
-              '🚀 ~ WutheringWavesQuestTracker ~ parseQuestsFromHTML ~ quest:',
-              quest,
-            );
+
+            quests.push(quest);
           });
+        });
+      } else {
+        // Every other quest type is only one level list, unlike the main quests.
+        ul.children().each(function () {
+          const quest: Quest = {
+            version,
+            type: questTypeName,
+            name: $(this).text(),
+            status: 'Not Finished',
+            completionDate: null,
+            notes: '',
+          };
+
+          quests.push(quest);
         });
       }
     }
@@ -226,7 +242,7 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
         `Found ${versionQuests.length} quests for version ${version}.`,
       );
 
-      this.quests.concat(versionQuests);
+      this.quests = this.quests.concat(versionQuests);
 
       return versionQuests.length;
     } catch (error) {
@@ -238,7 +254,22 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
     }
   }
 
-  exportToJSON() {}
+  async exportToJSON() {
+    fs.ensureDir(CONFIG.outputDir);
+
+    const output: QuestJSONExport = {
+      quests: this.quests,
+      length: this.quests.length,
+      createdAt: new Date().toISOString(),
+    };
+
+    const filePath = path.join(CONFIG.outputDir, CONFIG.jsonFileName);
+    await fs.writeJSON(filePath, output, { spaces: 2 });
+
+    console.log(`JSON exported to: ${filePath}`);
+
+    return filePath;
+  }
 
   async scrapeAllVersions() {
     /* 
@@ -250,13 +281,17 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
       5. Export output object as JSON and save it to designated output dir.
     */
 
-    console.log('Start all version scrape.');
+    console.log('Starting all version scrape...\n');
 
     try {
       for (const [version, urlPath] of Object.entries(
         CONFIG.versionPagesPaths,
       )) {
+        console.log(`Processing version ${version}.\n`);
+
         const count = await this.scrapeVersion(version, urlPath);
+
+        console.log(`Added ${count} quests from version ${version}.`);
 
         // Sleep between 3-10 seconds per page request.
         await this.sleep(Math.floor(Math.random() * 8 + 3) * 1000);
@@ -264,6 +299,8 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
     } catch (error) {
       console.error('Scrape all versions error.', error);
     }
+
+    return this.quests;
   }
 
   sleep(ms: number) {
@@ -276,7 +313,11 @@ class WutheringWavesQuestTracker implements IWutheringWavesQuestTracker {
 async function main() {
   const scraper = new WutheringWavesQuestTracker();
 
-  await scraper.scrapeAllVersions();
+  const quests = await scraper.scrapeAllVersions();
+
+  await scraper.exportToJSON();
+
+  console.log('✅ Wuthering Waves quest scraping is finished.');
 }
 
 main().catch(console.log);

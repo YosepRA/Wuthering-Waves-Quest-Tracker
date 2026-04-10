@@ -1,0 +1,70 @@
+{
+  "quests": [
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Prologue: Act I - Utterance of Marvels - Utterance of Marvels: I",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Prologue: Act I - Utterance of Marvels - Utterance of Marvels: II",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - First Resonance",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - Echoing Marche",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - Ominous Star",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - Clashing Blades",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - Rewinding Raindrops",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    },
+    {
+      "version": "1.0",
+      "type": "Main Quest",
+      "name": "Chapter I: Huanglong I - Grand Warstorm",
+      "status": "Not Finished",
+      "completionDate": null,
+      "notes": ""
+    }
+  ],
+  "length": 8,
+  "createdAt": "2026-04-10T03:33:17.015Z"
+}
